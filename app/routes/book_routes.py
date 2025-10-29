@@ -1,10 +1,45 @@
-from flask import Blueprint, abort, make_response
-from app.models.book import books
+from flask import Blueprint, abort, make_response, request, Response
+from app.models.book import Book
+from ..db import db
 
 books_bp = Blueprint("books_bp", __name__, url_prefix="/books")
 
+@books_bp.post("")
+def create_book():
+    request_body = request.get_json()
+    title = request_body["title"]
+    description = request_body["description"]
+
+    new_book = Book(title=title, description=description)
+    db.session.add(new_book)
+    db.session.commit()
+
+    response = {
+        "id": new_book.id,
+        "title": new_book.title,
+        "description": new_book.description,
+    }
+    return response, 201
+
 @books_bp.get("")
 def get_all_books():
+    query = db.select(Book)
+
+    title_param = request.args.get('title') # checks if the title param is present
+    description_param = request.args.get('description')
+    
+    # if filter present then filter the results of our query else get all books
+    if title_param:
+        query = query.where(Book.title.ilike(f"%{title_param}%")) # gets book(s) with title (ilike is case-incensitive while like is case sensitive)
+    if description_param:
+        query = query.where(Book.description.ilike(f"%{description_param}%"))
+
+    query = query.order_by(Book.id) # gets books ordered by their ID
+
+    books = db.session.scalars(query) # executes query and stores the results in the books variable
+    # We could also write the line above as:
+    # books = db.session.execute(query).scalars()
+
     books_response = []
     for book in books:
         books_response.append(
@@ -19,12 +54,32 @@ def get_all_books():
 @books_bp.get('/<book_id>')
 def get_one_book(book_id):
     book = validate_book(book_id)
-    
+
     return dict(
         id=book.id,
         title=book.title,
         description=book.description
-        )
+    )
+
+@books_bp.put('/<book_id>')
+def update_book(book_id):
+    book = validate_book(book_id)
+    request_body = request.get_json()
+
+    book.title = request_body['title']
+    book.description = request_body['description']
+    db.session.commit()
+
+    return Response(status=204, mimetype='application/json')
+
+@books_bp.delete('/<book_id>')
+def delete_book(book_id):
+    book = validate_book(book_id)
+    db.session.delete(book)
+    db.session.commit()
+
+
+    return Response(status=204, mimetype='application/json')
 
 def validate_book(book_id):
     try:
@@ -33,9 +88,39 @@ def validate_book(book_id):
         response = {"message": f"book {book_id} invalid"}
         abort(make_response(response, 400))
 
-    for book in books:
-        if book.id == book_id:
-            return book
+    query = db.select(Book).where(Book.id == book_id)
+    book = db.session.scalar(query)
 
-    response = {"message": f"book {book_id} not found"}
-    abort(make_response(response, 404))
+    if not book:
+        response = {"message": f"book {book_id} not found"}
+        abort(make_response(response, 404))
+
+    return book
+
+# @books_bp.get("")
+# def get_all_books():
+#     return make_response("I'm a teapot!", 418)
+
+# @books_bp.get("")
+# def get_all_books():
+#     books_response = []
+#     for book in books:
+#         books_response.append(
+#             {
+#                 "id": book.id,
+#                 "title": book.title,
+#                 "description": book.description
+#             }
+#         )
+#     return books_response
+
+# @books_bp.get('/<book_id>')
+# def get_one_book(book_id):
+#     book = validate_book(book_id)
+    
+#     return dict(
+#         id=book.id,
+#         title=book.title,
+#         description=book.description
+#         )
+

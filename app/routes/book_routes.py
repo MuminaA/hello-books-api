@@ -1,47 +1,18 @@
 from flask import Blueprint, abort, make_response, request, Response
 from app.models.book import Book
 from ..db import db
-from .route_utilities import validate_model
+from .route_utilities import validate_model, create_model, get_models_with_filters
 
 bp = Blueprint("books_bp", __name__, url_prefix="/books")
 
 @bp.post("")
 def create_book():
     request_body = request.get_json()
-    try:
-        new_book = Book.from_dict(request_body)
-    except KeyError as error:
-        response = {"message": f"Invalid request: missing {error.args[0]}"}
-        abort(make_response(response, 400))
-
-    db.session.add(new_book)
-    db.session.commit()
-
-    return new_book.to_dict(), 201
+    return create_model(Book, request_body)
 
 @bp.get("")
 def get_all_books():
-    query = db.select(Book)
-
-    title_param = request.args.get('title') # checks if the title param is present
-    description_param = request.args.get('description')
-    
-    # if filter present then filter the results of our query else get all books
-    if title_param:
-        query = query.where(Book.title.ilike(f"%{title_param}%")) # gets book(s) with title (ilike is case-incensitive while like is case sensitive)
-    if description_param:
-        query = query.where(Book.description.ilike(f"%{description_param}%"))
-
-    query = query.order_by(Book.id) # gets books ordered by their ID
-
-    books = db.session.scalars(query) # executes query and stores the results in the books variable
-    # We could also write the line above as:
-    # books = db.session.execute(query).scalars()
-
-    books_response = []
-    for book in books:
-        books_response.append(book.to_dict())
-    return books_response
+    return get_models_with_filters(Book, request.args)
 
 @bp.get('/<book_id>')
 def get_one_book(book_id):
@@ -57,8 +28,7 @@ def update_book(book_id):
     book.description = request_body['description']
     db.session.commit()
 
-    # return Response(status=204, mimetype='application/json')
-    return '', 204
+    return Response(status=204, mimetype='application/json')
 
 @bp.delete('/<book_id>')
 def delete_book(book_id):
@@ -67,7 +37,7 @@ def delete_book(book_id):
     db.session.commit()
 
 
-    return '', 204
+    return Response(status=204, mimetype='application/json')
 
 
 # @books_bp.get("")
